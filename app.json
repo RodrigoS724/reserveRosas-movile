@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "reserveRosas-movile",
+    "name": "reserveRosas Mobile",
     "slug": "reserveRosas-movile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -25,6 +25,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "https://rosas.uy",
+      "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4"
     }
   }
 }
