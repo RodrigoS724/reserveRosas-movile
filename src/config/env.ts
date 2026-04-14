@@ -1,5 +1,5 @@
 const EMBEDDED_ENV = {
-  apiUrl: 'https://rosas.uy',
+  apiUrl: 'https://rosas.uy/api-socket-io',
   apiToken: 'gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4',
 }
 

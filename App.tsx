@@ -25,6 +25,7 @@ import {
   Reserva,
   SessionUser,
 } from './src/services/api'
+import { subscribeRealtime } from './src/services/realtime'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveScreen = 'panel' | 'ajustes'
@@ -154,6 +155,7 @@ export default function App() {
   const [updatingKey, setUpdatingKey] = useState('')
   const [error, setError] = useState('')
   const [lastSync, setLastSync] = useState('')
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
 
   const isDark = themeMode === 'dark'
@@ -210,6 +212,27 @@ export default function App() {
   useEffect(() => {
     if (user) {
       cargarPanel()
+    }
+  }, [user, cargarPanel])
+
+  useEffect(() => {
+    if (!user) {
+      setRealtimeConnected(false)
+      return
+    }
+
+    const unsubscribe = subscribeRealtime(
+      (payload) => {
+        const scope = String(payload?.scope || '')
+        if (!['reservas', 'aprontes', 'horarios', 'horarios-aprontes'].includes(scope)) return
+        void cargarPanel(true)
+      },
+      setRealtimeConnected
+    )
+
+    return () => {
+      unsubscribe()
+      setRealtimeConnected(false)
     }
   }, [user, cargarPanel])
 
@@ -311,6 +334,7 @@ export default function App() {
             </TouchableOpacity>
 
             <Text style={[styles.helperText, { color: palette.muted }]}>API embebida: {ENV.apiUrl}</Text>
+            <Text style={[styles.helperText, { color: palette.muted }]}>Tiempo real: {realtimeConnected ? 'activo' : 'reintentando...'}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -323,6 +347,7 @@ export default function App() {
         <Text style={[styles.kicker, { color: palette.primary }]}>Agenda de hoy</Text>
         <Text style={[styles.heroTitle, { color: palette.text }]}>{formatPrettyDate(fechaHoy)}</Text>
         <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Última sincronización: {lastSync || 'pendiente'}</Text>
+        <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Socket: {realtimeConnected ? 'conectado' : 'reconectando'}</Text>
 
         <View style={styles.statsRow}>
           <StatCard label="Reservas" value={String(reservas.length)} palette={palette} />
