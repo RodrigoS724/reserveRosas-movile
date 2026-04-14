@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar'
+import * as Updates from 'expo-updates'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -154,6 +155,7 @@ export default function App() {
   const [updatingKey, setUpdatingKey] = useState('')
   const [error, setError] = useState('')
   const [lastSync, setLastSync] = useState('')
+  const [updateStatus, setUpdateStatus] = useState('verificando versión')
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
 
   const isDark = themeMode === 'dark'
@@ -212,6 +214,45 @@ export default function App() {
       cargarPanel()
     }
   }, [user, cargarPanel])
+
+  useEffect(() => {
+    const buscarActualizacion = async () => {
+      if (__DEV__) {
+        setUpdateStatus('modo desarrollo')
+        return
+      }
+
+      try {
+        const result = await Updates.checkForUpdateAsync()
+        if (!result.isAvailable) {
+          setUpdateStatus('app actualizada')
+          return
+        }
+
+        setUpdateStatus('descargando actualización')
+        await Updates.fetchUpdateAsync()
+        setUpdateStatus('actualización lista')
+
+        Alert.alert(
+          'Actualización disponible',
+          'Se descargó una nueva versión. Reinicia la app para aplicarla.',
+          [
+            { text: 'Luego', style: 'cancel' },
+            {
+              text: 'Reiniciar',
+              onPress: () => {
+                void Updates.reloadAsync()
+              },
+            },
+          ]
+        )
+      } catch {
+        setUpdateStatus('sin actualización remota')
+      }
+    }
+
+    void buscarActualizacion()
+  }, [])
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -311,6 +352,7 @@ export default function App() {
             </TouchableOpacity>
 
             <Text style={[styles.helperText, { color: palette.muted }]}>API embebida: {ENV.apiUrl}</Text>
+            <Text style={[styles.helperText, { color: palette.muted }]}>Versiones: {updateStatus}</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -323,6 +365,7 @@ export default function App() {
         <Text style={[styles.kicker, { color: palette.primary }]}>Agenda de hoy</Text>
         <Text style={[styles.heroTitle, { color: palette.text }]}>{formatPrettyDate(fechaHoy)}</Text>
         <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Última sincronización: {lastSync || 'pendiente'}</Text>
+        <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Estado de versión: {updateStatus}</Text>
 
         <View style={styles.statsRow}>
           <StatCard label="Reservas" value={String(reservas.length)} palette={palette} />

@@ -4,17 +4,28 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "version:sync": "node scripts/sync-version.js",
+    "version:patch": "npm version patch --no-git-tag-version && npm run version:sync",
+    "version:minor": "npm version minor --no-git-tag-version && npm run version:sync",
+    "version:major": "npm version major --no-git-tag-version && npm run version:sync",
+    "prebuild:android": "npm run version:sync && expo prebuild --platform android",
+    "build:apk": "npm run version:sync && expo prebuild --platform android && cd android && gradlew.bat assembleRelease",
+    "update:preview": "npm run version:sync && npx eas-cli update --channel preview",
+    "update:production": "npm run version:sync && npx eas-cli update --channel production"
   },
   "dependencies": {
     "expo": "~54.0.33",
     "expo-status-bar": "~3.0.9",
+    "expo-system-ui": "~6.0.9",
+    "expo-updates": "~29.0.16",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-web": "^0.21.0"
+    "react-native-web": "^0.21.0",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
