@@ -49,6 +49,32 @@ function unwrapPayload<T>(payload: any): T {
   return payload as T
 }
 
+function getBaseCandidates() {
+  const primary = String(ENV.apiUrl || '').trim().replace(/\/+$/, '')
+  const candidates = [primary]
+
+  if (primary.endsWith('/api')) {
+    candidates.push(primary.replace(/\/api$/, ''))
+  } else if (primary.includes('/api-socket-io')) {
+    candidates.push(primary.replace('/api-socket-io', ''))
+  } else if (primary) {
+    candidates.push(`${primary}/api`)
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
+function buildRequestUrl(baseUrl: string, path: string) {
+  const cleanBase = String(baseUrl || '').trim().replace(/\/+$/, '')
+  const cleanPath = String(path || '').trim().startsWith('/') ? String(path || '').trim() : `/${String(path || '').trim()}`
+
+  if (cleanBase.endsWith('/api') && cleanPath.startsWith('/api/')) {
+    return `${cleanBase}${cleanPath.slice(4)}`
+  }
+
+  return `${cleanBase}${cleanPath}`
+}
+
 async function request<T>(path: string, options: any = {}): Promise<T> {
   const headers = {
     'Content-Type': 'application/json',
@@ -56,26 +82,35 @@ async function request<T>(path: string, options: any = {}): Promise<T> {
     ...(options.headers || {}),
   }
 
-  const response = await fetch(`${ENV.apiUrl}${path}`, {
-    ...options,
-    headers,
-  })
+  let lastMessage = 'Error de conexión'
 
-  const raw = await response.text()
-  let payload: any = null
+  for (const baseUrl of getBaseCandidates()) {
+    const response = await fetch(buildRequestUrl(baseUrl, path), {
+      ...options,
+      headers,
+    })
 
-  try {
-    payload = raw ? JSON.parse(raw) : null
-  } catch {
-    payload = raw
+    const raw = await response.text()
+    let payload: any = null
+
+    try {
+      payload = raw ? JSON.parse(raw) : null
+    } catch {
+      payload = raw
+    }
+
+    if (response.ok && !(payload && typeof payload === 'object' && payload.ok === false)) {
+      return unwrapPayload<T>(payload)
+    }
+
+    lastMessage = payload?.error || `HTTP ${response.status}`
+
+    if (!(response.status === 404 || String(lastMessage).toLowerCase().includes('endpoint no encontrado'))) {
+      throw new Error(lastMessage)
+    }
   }
 
-  if (!response.ok || (payload && typeof payload === 'object' && payload.ok === false)) {
-    const message = payload?.error || `HTTP ${response.status}`
-    throw new Error(message)
-  }
-
-  return unwrapPayload<T>(payload)
+  throw new Error(lastMessage)
 }
 
 export function login(username: string, password: string) {

@@ -39,7 +39,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiUrl": "https://rosas.uy/api-socket-io",
+      "apiUrl": "https://rosas.uy/api",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
       "gitCommit": "15d8779",
       "gitVersionCode": 2
