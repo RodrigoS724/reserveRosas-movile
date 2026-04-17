@@ -15,7 +15,7 @@ Workflow: `.github/workflows/manual.yml`
 
 Configurar este secret en GitHub (repo `reserveRosas-movile`):
 
-- `EAS_TOKEN`: token de Expo/EAS con permisos para publicar updates.
+- `EXPO_TOKEN`: token de Expo/EAS con permisos para publicar updates.
 
 Ademas el proyecto debe estar enlazado en EAS (si no lo esta, ejecutar una vez `npx eas-cli init` localmente).
 
@@ -23,7 +23,7 @@ Ademas el proyecto debe estar enlazado en EAS (si no lo esta, ejecutar una vez `
 
 1. Entrar al repo `reserveRosas-movile` en GitHub.
 2. Ir a `Settings > Secrets and variables > Actions`.
-3. Crear el secret `EAS_TOKEN`.
+3. Crear el secret `EXPO_TOKEN`.
 4. Verificar que exista el workflow `.github/workflows/manual.yml` en la rama `master`.
 5. Ir a la pestaña `Actions` y ejecutar una vez `Mobile OTA Update` en modo manual:
 	- Channel: `preview`

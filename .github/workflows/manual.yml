@@ -62,28 +62,28 @@ jobs:
 
       - name: Verify EAS token
         env:
-          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+          EXPO_TOKEN: ${{ secrets['EXPO_TOKEN'] }}
         run: |
-          if [ -z "$EAS_TOKEN" ]; then
-            echo "Falta configurar el secret EAS_TOKEN en GitHub."
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "Falta configurar el secret EXPO_TOKEN en GitHub."
             exit 1
           fi
 
       - name: Verify EAS project link
         env:
-          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+          EXPO_TOKEN: ${{ secrets['EXPO_TOKEN'] }}
         run: npx eas-cli project:info --non-interactive
 
       - name: Publish OTA update (push -> production)
         if: github.event_name == 'push'
         env:
-          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+          EXPO_TOKEN: ${{ secrets['EXPO_TOKEN'] }}
         run: npx eas-cli update --non-interactive --channel production --message "OTA production ${GITHUB_SHA::7}"
 
       - name: Publish OTA update (manual)
         if: github.event_name == 'workflow_dispatch'
         env:
-          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+          EXPO_TOKEN: ${{ secrets['EXPO_TOKEN'] }}
         run: |
           CHANNEL="${{ inputs.channel }}"
           MESSAGE="${{ inputs.message }}"
