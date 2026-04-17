@@ -1,32 +1,93 @@
-# This is a basic workflow that is manually triggered
+name: Mobile OTA Update
 
-name: Manual workflow
-
-# Controls when the action will run. Workflow runs when manually triggered using the UI
-# or API.
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - App.tsx
+      - app.json
+      - eas.json
+      - package.json
+      - package-lock.json
+      - index.ts
+      - src/**
+      - assets/**
+      - scripts/**
+      - .github/workflows/manual.yml
   workflow_dispatch:
-    # Inputs the workflow accepts.
     inputs:
-      name:
-        # Friendly description to be shown in the UI instead of 'name'
-        description: 'Person to greet'
-        # Default value if no value is explicitly provided
-        default: 'World'
-        # Input has to be provided for the workflow to run
+      channel:
+        description: Canal EAS Update
         required: true
-        # The data type of the input
+        default: production
+        type: choice
+        options:
+          - preview
+          - production
+      message:
+        description: Mensaje del update (opcional)
+        required: false
         type: string
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
-jobs:
-  # This workflow contains a single job called "greet"
-  greet:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+concurrency:
+  group: mobile-ota-${{ github.ref }}
+  cancel-in-progress: true
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
+jobs:
+  eas-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EAS_NO_VCS: 1
+
     steps:
-    # Runs a single command using the runners shell
-    - name: Send greeting
-      run: echo "Hello ${{ inputs.name }}"
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync app version metadata
+        run: npm run version:sync
+
+      - name: Verify EAS token
+        env:
+          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+        run: |
+          if [ -z "$EAS_TOKEN" ]; then
+            echo "Falta configurar el secret EAS_TOKEN en GitHub."
+            exit 1
+          fi
+
+      - name: Verify EAS project link
+        env:
+          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+        run: npx eas-cli project:info --non-interactive
+
+      - name: Publish OTA update (push -> production)
+        if: github.event_name == 'push'
+        env:
+          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+        run: npx eas-cli update --non-interactive --channel production --message "OTA production ${GITHUB_SHA::7}"
+
+      - name: Publish OTA update (manual)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          EAS_TOKEN: ${{ secrets['EAS_TOKEN'] }}
+        run: |
+          CHANNEL="${{ inputs.channel }}"
+          MESSAGE="${{ inputs.message }}"
+          if [ -z "$MESSAGE" ]; then
+            MESSAGE="OTA ${CHANNEL} ${GITHUB_SHA::7}"
+          fi
+          npx eas-cli update --non-interactive --channel "$CHANNEL" --message "$MESSAGE"
