@@ -42,7 +42,11 @@
       "apiUrl": "https://rosas.uy/api-server",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
       "gitCommit": "15d8779",
-      "gitVersionCode": 2
-    }
+      "gitVersionCode": 2,
+      "eas": {
+        "projectId": "c444a89e-1abd-4b96-939e-f2a3de128162"
+      }
+    },
+    "owner": "rodrigo724"
   }
 }
