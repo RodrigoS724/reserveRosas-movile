@@ -1,7 +1,7 @@
 import Constants from 'expo-constants'
 
 const EMBEDDED_ENV = {
-  apiUrl: 'https://rosas.uy/api',
+  apiUrl: 'https://rosas.uy/api-server',
   apiToken: 'gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4',
 }
 
