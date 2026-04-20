@@ -51,17 +51,32 @@ function unwrapPayload<T>(payload: any): T {
 
 function getBaseCandidates() {
   const primary = String(ENV.apiUrl || '').trim().replace(/\/+$/, '')
-  const candidates = [primary]
+  if (!primary) return []
 
-  if (primary.endsWith('/api')) {
-    candidates.push(primary.replace(/\/api$/, ''))
-  } else if (primary.includes('/api-socket-io')) {
-    candidates.push(primary.replace('/api-socket-io', ''))
-  } else if (primary) {
-    candidates.push(`${primary}/api`)
+  const roots = new Set<string>()
+  roots.add(primary)
+
+  const withoutApi = primary.replace(/\/api$/, '')
+  const withoutApiServer = primary.replace(/\/api-server$/, '')
+  const withoutApiSocket = primary.replace(/\/api-socket-io$/, '')
+
+  if (withoutApi) roots.add(withoutApi)
+  if (withoutApiServer) roots.add(withoutApiServer)
+  if (withoutApiSocket) roots.add(withoutApiSocket)
+
+  const candidates = new Set<string>()
+
+  for (const root of roots) {
+    const clean = String(root || '').trim().replace(/\/+$/, '')
+    if (!clean) continue
+
+    candidates.add(clean)
+    candidates.add(`${clean}/api`)
+    candidates.add(`${clean}/api-server`)
+    candidates.add(`${clean}/api-socket-io`)
   }
 
-  return Array.from(new Set(candidates.filter(Boolean)))
+  return Array.from(candidates)
 }
 
 function buildRequestUrl(baseUrl: string, path: string) {
@@ -85,28 +100,33 @@ async function request<T>(path: string, options: any = {}): Promise<T> {
   let lastMessage = 'Error de conexión'
 
   for (const baseUrl of getBaseCandidates()) {
-    const response = await fetch(buildRequestUrl(baseUrl, path), {
-      ...options,
-      headers,
-    })
-
-    const raw = await response.text()
-    let payload: any = null
-
     try {
-      payload = raw ? JSON.parse(raw) : null
-    } catch {
-      payload = raw
-    }
+      const response = await fetch(buildRequestUrl(baseUrl, path), {
+        ...options,
+        headers,
+      })
 
-    if (response.ok && !(payload && typeof payload === 'object' && payload.ok === false)) {
-      return unwrapPayload<T>(payload)
-    }
+      const raw = await response.text()
+      let payload: any = null
 
-    lastMessage = payload?.error || `HTTP ${response.status}`
+      try {
+        payload = raw ? JSON.parse(raw) : null
+      } catch {
+        payload = raw
+      }
 
-    if (!(response.status === 404 || String(lastMessage).toLowerCase().includes('endpoint no encontrado'))) {
-      throw new Error(lastMessage)
+      if (response.ok && !(payload && typeof payload === 'object' && payload.ok === false)) {
+        return unwrapPayload<T>(payload)
+      }
+
+      lastMessage = payload?.error || `HTTP ${response.status}`
+
+      if (!(response.status === 404 || String(lastMessage).toLowerCase().includes('endpoint no encontrado'))) {
+        throw new Error(lastMessage)
+      }
+    } catch (err: any) {
+      lastMessage = String(err?.message || lastMessage || 'Error de conexión')
+      continue
     }
   }
 

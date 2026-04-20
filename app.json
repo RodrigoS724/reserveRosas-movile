@@ -13,7 +13,8 @@
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/c444a89e-1abd-4b96-939e-f2a3de128162"
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -23,11 +24,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "uy.rosas.reserverosasmobile",
-      "buildNumber": "2"
+      "buildNumber": "10"
     },
     "android": {
       "package": "uy.rosas.reserverosasmobile",
-      "versionCode": 2,
+      "versionCode": 10,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -41,8 +42,8 @@
     "extra": {
       "apiUrl": "https://rosas.uy/api-server",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
-      "gitCommit": "15d8779",
-      "gitVersionCode": 2,
+      "gitCommit": "3d7d4c2",
+      "gitVersionCode": 10,
       "eas": {
         "projectId": "c444a89e-1abd-4b96-939e-f2a3de128162"
       }

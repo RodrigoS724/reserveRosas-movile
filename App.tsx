@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar'
 import * as Updates from 'expo-updates'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +26,11 @@ import {
   Reserva,
   SessionUser,
 } from './src/services/api'
+import {
+  clearStoredCredentials,
+  loadStoredCredentials,
+  saveStoredCredentials,
+} from './src/services/credentials'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveScreen = 'panel' | 'ajustes'
@@ -146,6 +151,8 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>('panel')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberCredentials, setRememberCredentials] = useState(false)
+  const [restoringCredentials, setRestoringCredentials] = useState(true)
   const [user, setUser] = useState<SessionUser | null>(null)
   const [reservas, setReservas] = useState<Reserva[]>([])
   const [aprontes, setAprontes] = useState<Apronte[]>([])
@@ -157,6 +164,7 @@ export default function App() {
   const [lastSync, setLastSync] = useState('')
   const [updateStatus, setUpdateStatus] = useState('verificando versión')
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
+  const hasTriedAutoLogin = useRef(false)
 
   const isDark = themeMode === 'dark'
   const palette = PALETTES[themeMode]
@@ -216,6 +224,31 @@ export default function App() {
   }, [user, cargarPanel])
 
   useEffect(() => {
+    let mounted = true
+
+    const restoreCredentials = async () => {
+      try {
+        const stored = await loadStoredCredentials()
+        if (!mounted || !stored) return
+
+        setUsername(stored.username)
+        setPassword(stored.password)
+        setRememberCredentials(true)
+      } finally {
+        if (mounted) {
+          setRestoringCredentials(false)
+        }
+      }
+    }
+
+    void restoreCredentials()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
     const buscarActualizacion = async () => {
       if (__DEV__) {
         setUpdateStatus('modo desarrollo')
@@ -254,9 +287,14 @@ export default function App() {
     void buscarActualizacion()
   }, [])
 
-  const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Datos incompletos', 'Ingresa tu usuario y contraseña.')
+  const handleLogin = useCallback(async (options?: { silent?: boolean }) => {
+    const userValue = username.trim()
+    const passValue = password
+
+    if (!userValue || !passValue) {
+      if (!options?.silent) {
+        Alert.alert('Datos incompletos', 'Ingresa tu usuario y contraseña.')
+      }
       return
     }
 
@@ -264,20 +302,52 @@ export default function App() {
     setError('')
 
     try {
-      const result = await login(username.trim(), password)
+      const result = await login(userValue, passValue)
       if (!result?.ok || !result.user) {
         throw new Error(result?.error || 'No fue posible iniciar sesión.')
       }
       setUser(result.user)
-      setPassword('')
+
+      if (rememberCredentials) {
+        await saveStoredCredentials(userValue, passValue)
+      } else {
+        await clearStoredCredentials()
+        setPassword('')
+      }
     } catch (err: any) {
-      setError(err?.message || 'Credenciales inválidas.')
+      const message = err?.message || 'Credenciales inválidas.'
+      setError(message)
+
+      if (!options?.silent) {
+        Alert.alert('Inicio de sesión', message)
+      }
     } finally {
       setSubmitting(false)
     }
-  }
+  }, [password, rememberCredentials, username])
+
+  useEffect(() => {
+    if (restoringCredentials) return
+    if (hasTriedAutoLogin.current) return
+
+    hasTriedAutoLogin.current = true
+
+    if (!rememberCredentials) return
+    if (!username.trim() || !password.trim()) return
+
+    void handleLogin({ silent: true })
+  }, [handleLogin, password, rememberCredentials, restoringCredentials, username])
+
+  const handleRememberCredentials = useCallback(async (value: boolean) => {
+    setRememberCredentials(value)
+
+    if (!value) {
+      await clearStoredCredentials()
+    }
+  }, [])
 
   const logout = () => {
+    hasTriedAutoLogin.current = true
     setUser(null)
     setReservas([])
     setAprontes([])
@@ -345,11 +415,33 @@ export default function App() {
               onChangeText={setPassword}
             />
 
+            <View style={styles.rememberRow}>
+              <View style={styles.rememberTextBox}>
+                <Text style={[styles.rememberTitle, { color: palette.text }]}>Recordar credenciales</Text>
+                <Text style={[styles.rememberHint, { color: palette.muted }]}>Guarda usuario y contraseña para iniciar automáticamente.</Text>
+              </View>
+              <Switch
+                value={rememberCredentials}
+                onValueChange={(value) => {
+                  void handleRememberCredentials(value)
+                }}
+                thumbColor="#ffffff"
+                trackColor={{ false: '#cbd5e1', true: palette.primary }}
+              />
+            </View>
+
             {error ? <Text style={[styles.errorText, { color: palette.danger }]}>{error}</Text> : null}
 
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: palette.primary }]} onPress={handleLogin} disabled={submitting}>
+            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: palette.primary }]} onPress={() => void handleLogin()} disabled={submitting || restoringCredentials}>
               <Text style={styles.primaryButtonText}>{submitting ? 'Ingresando...' : 'Iniciar sesión'}</Text>
             </TouchableOpacity>
+
+            {restoringCredentials ? (
+              <View style={styles.restoringBox}>
+                <ActivityIndicator size="small" color={palette.primary} />
+                <Text style={[styles.restoringText, { color: palette.muted }]}>Restaurando credenciales...</Text>
+              </View>
+            ) : null}
 
             <Text style={[styles.helperText, { color: palette.muted }]}>API embebida: {ENV.apiUrl}</Text>
             <Text style={[styles.helperText, { color: palette.muted }]}>Versiones: {updateStatus}</Text>
@@ -731,6 +823,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 12,
   },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -2,
+    marginBottom: 10,
+  },
+  rememberTextBox: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  rememberTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  rememberHint: {
+    fontSize: 11,
+    marginTop: 2,
+  },
   primaryButton: {
     borderRadius: 14,
     paddingVertical: 14,
@@ -746,6 +857,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 12,
     textAlign: 'center',
+  },
+  restoringBox: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  restoringText: {
+    marginLeft: 8,
+    fontSize: 12,
   },
   errorText: {
     marginBottom: 10,
