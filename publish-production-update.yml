@@ -1,0 +1,12 @@
+name: Publish production OTA update
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  publish-production:
+    name: Publish OTA to production channel
+    type: update
+    params:
+      channel: production
+      message: OTA production update from EAS Workflow

@@ -1,0 +1,12 @@
+name: Create preview APK builds
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  android-preview:
+    name: Android preview APK build
+    type: build
+    params:
+      platform: android
+      profile: preview
