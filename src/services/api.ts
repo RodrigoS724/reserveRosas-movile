@@ -122,9 +122,14 @@ async function request<T>(path: string, options: any = {}): Promise<T> {
       lastMessage = payload?.error || `HTTP ${response.status}`
 
       if (!(response.status === 404 || String(lastMessage).toLowerCase().includes('endpoint no encontrado'))) {
-        throw new Error(lastMessage)
+        const fatalError: any = new Error(lastMessage)
+        fatalError.stopFallback = true
+        throw fatalError
       }
     } catch (err: any) {
+      if (err?.stopFallback) {
+        throw err
+      }
       lastMessage = String(err?.message || lastMessage || 'Error de conexión')
       continue
     }
@@ -149,12 +154,28 @@ export function obtenerAprontesDia(fecha: string) {
 }
 
 export function cambiarEstadoReserva(reserva: Reserva, estado: string) {
-  return request('/api/reservas/' + reserva.id, {
-    method: 'PUT',
-    body: JSON.stringify({
-      ...reserva,
-      estado,
-    }),
+  const id = reserva.id
+
+  return request('/api/reservas/' + id + '/estado', {
+    method: 'PATCH',
+    body: JSON.stringify({ estado }),
+  }).catch((error: any) => {
+    const message = String(error?.message || '').toLowerCase()
+    const shouldFallback =
+      message.includes('endpoint no encontrado') ||
+      message.includes('http 404')
+
+    if (!shouldFallback) {
+      throw error
+    }
+
+    return request('/api/reservas/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...reserva,
+        estado,
+      }),
+    })
   })
 }
 
