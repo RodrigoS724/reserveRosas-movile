@@ -14,7 +14,10 @@
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0,
-      "url": "https://u.expo.dev/c444a89e-1abd-4b96-939e-f2a3de128162"
+      "url": "https://u.expo.dev/c444a89e-1abd-4b96-939e-f2a3de128162",
+      "requestHeaders": {
+        "expo-channel-name": "preview"
+      }
     },
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -24,11 +27,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "uy.rosas.reserverosasmobile",
-      "buildNumber": "10"
+      "buildNumber": "11"
     },
     "android": {
       "package": "uy.rosas.reserverosasmobile",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -42,12 +45,15 @@
     "extra": {
       "apiUrl": "https://rosas.uy/api-server",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
-      "gitCommit": "3d7d4c2",
-      "gitVersionCode": 10,
+      "gitCommit": "f943849",
+      "gitVersionCode": 11,
       "eas": {
         "projectId": "c444a89e-1abd-4b96-939e-f2a3de128162"
       }
     },
-    "owner": "rodrigo724"
+    "owner": "rodrigo724",
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

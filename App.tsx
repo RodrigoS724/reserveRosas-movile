@@ -163,6 +163,8 @@ export default function App() {
   const [error, setError] = useState('')
   const [lastSync, setLastSync] = useState('')
   const [updateStatus, setUpdateStatus] = useState('verificando versión')
+  const [updateDebug, setUpdateDebug] = useState('')
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
   const hasTriedAutoLogin = useRef(false)
 
@@ -249,43 +251,65 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const buscarActualizacion = async () => {
-      if (__DEV__) {
-        setUpdateStatus('modo desarrollo')
+    const channel = Updates.channel || 'sin canal'
+    const runtime = Updates.runtimeVersion || 'sin runtime'
+    const updateId = Updates.updateId || 'embedded'
+    setUpdateDebug(`canal ${channel} · runtime ${runtime} · update ${updateId}`)
+  }, [])
+
+  const buscarActualizacion = useCallback(async (options?: { manual?: boolean }) => {
+    if (__DEV__) {
+      setUpdateStatus('modo desarrollo')
+      if (options?.manual) {
+        Alert.alert('OTA deshabilitada', 'En modo desarrollo no se aplican updates OTA de EAS.')
+      }
+      return
+    }
+
+    setCheckingUpdate(true)
+
+    try {
+      setUpdateStatus('verificando actualización')
+      const result = await Updates.checkForUpdateAsync()
+      if (!result.isAvailable) {
+        setUpdateStatus('app actualizada')
+        if (options?.manual) {
+          Alert.alert('Sin novedades', 'No hay una actualización OTA disponible para este runtime/canal.')
+        }
         return
       }
 
-      try {
-        const result = await Updates.checkForUpdateAsync()
-        if (!result.isAvailable) {
-          setUpdateStatus('app actualizada')
-          return
-        }
+      setUpdateStatus('descargando actualización')
+      await Updates.fetchUpdateAsync()
+      setUpdateStatus('actualización lista')
 
-        setUpdateStatus('descargando actualización')
-        await Updates.fetchUpdateAsync()
-        setUpdateStatus('actualización lista')
-
-        Alert.alert(
-          'Actualización disponible',
-          'Se descargó una nueva versión. Reinicia la app para aplicarla.',
-          [
-            { text: 'Luego', style: 'cancel' },
-            {
-              text: 'Reiniciar',
-              onPress: () => {
-                void Updates.reloadAsync()
-              },
+      Alert.alert(
+        'Actualización disponible',
+        'Se descargó una nueva versión. Reinicia la app para aplicarla.',
+        [
+          { text: 'Luego', style: 'cancel' },
+          {
+            text: 'Reiniciar',
+            onPress: () => {
+              void Updates.reloadAsync()
             },
-          ]
-        )
-      } catch {
-        setUpdateStatus('sin actualización remota')
+          },
+        ]
+      )
+    } catch (err: any) {
+      const message = err?.message || 'sin detalles'
+      setUpdateStatus(`error OTA: ${message}`)
+      if (options?.manual) {
+        Alert.alert('Error de actualización', message)
       }
+    } finally {
+      setCheckingUpdate(false)
     }
-
-    void buscarActualizacion()
   }, [])
+
+  useEffect(() => {
+    void buscarActualizacion()
+  }, [buscarActualizacion])
 
   const handleLogin = useCallback(async (options?: { silent?: boolean }) => {
     const userValue = username.trim()
@@ -608,6 +632,21 @@ export default function App() {
         <Text style={[styles.sectionTitle, { color: palette.text }]}>Conexión</Text>
         <DetailField label="API" value={ENV.apiUrl} palette={palette} />
         <DetailField label="Token embebido" value="Sí" palette={palette} />
+      </View>
+
+      <View style={[styles.settingsCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
+        <Text style={[styles.sectionTitle, { color: palette.text }]}>Actualizaciones OTA</Text>
+        <DetailField label="Estado" value={updateStatus} palette={palette} />
+        <DetailField label="Diagnóstico" value={updateDebug} palette={palette} />
+        <TouchableOpacity
+          style={[styles.primaryButton, { backgroundColor: palette.primary, marginTop: 10 }]}
+          onPress={() => {
+            void buscarActualizacion({ manual: true })
+          }}
+          disabled={checkingUpdate}
+        >
+          <Text style={styles.primaryButtonText}>{checkingUpdate ? 'Verificando...' : 'Buscar actualización ahora'}</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.settingsCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
