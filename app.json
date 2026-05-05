@@ -27,11 +27,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "uy.rosas.reserverosasmobile",
-      "buildNumber": "13"
+      "buildNumber": "14"
     },
     "android": {
       "package": "uy.rosas.reserverosasmobile",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -45,8 +45,8 @@
     "extra": {
       "apiUrl": "https://rosas.uy/api-server",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
-      "gitCommit": "9e8b4ce",
-      "gitVersionCode": 13,
+      "gitCommit": "2aff151",
+      "gitVersionCode": 14,
       "eas": {
         "projectId": "c444a89e-1abd-4b96-939e-f2a3de128162"
       }
