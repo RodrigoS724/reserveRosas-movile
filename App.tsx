@@ -27,10 +27,14 @@ import {
   SessionUser,
 } from './src/services/api'
 import {
+  clearStoredSessionUser,
   clearStoredCredentials,
+  loadStoredSessionUser,
   loadStoredCredentials,
+  saveStoredSessionUser,
   saveStoredCredentials,
 } from './src/services/credentials'
+import { getMinutesUntil, initNotifications, notifyNewApronte, notifyUpcoming } from './src/services/notifications'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveScreen = 'panel' | 'ajustes'
@@ -167,17 +171,72 @@ export default function App() {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
   const hasTriedAutoLogin = useRef(false)
+  const initializedApronteIds = useRef<Set<number>>(new Set())
+  const upcomingNotificationsSent = useRef<Set<string>>(new Set())
 
   const isDark = themeMode === 'dark'
   const palette = PALETTES[themeMode]
 
-  const cargarPanel = useCallback(async (isRefresh = false) => {
+  const evaluarNotificaciones = useCallback(async (reservasData: Reserva[], aprontesData: Apronte[]) => {
+    const idsActuales = new Set<number>()
+
+    for (const apronte of aprontesData) {
+      const id = Number(apronte?.id || 0)
+      if (!id) continue
+      idsActuales.add(id)
+    }
+
+    if (initializedApronteIds.current.size === 0) {
+      initializedApronteIds.current = idsActuales
+    } else {
+      for (const apronte of aprontesData) {
+        const id = Number(apronte?.id || 0)
+        if (!id) continue
+        if (!initializedApronteIds.current.has(id)) {
+          await notifyNewApronte(apronte)
+        }
+      }
+      initializedApronteIds.current = idsActuales
+    }
+
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    const hoy = `${y}-${m}-${d}`
+
+    const checkUpcoming = async (kind: 'reserva' | 'apronte', items: Array<Reserva | Apronte>) => {
+      for (const item of items) {
+        if (String(item?.fecha || '') !== hoy) continue
+        const id = Number(item?.id || 0)
+        if (!id) continue
+        const minutesLeft = getMinutesUntil(item?.fecha as string, item?.hora as string)
+        if (minutesLeft === null) continue
+        if (minutesLeft < 0 || minutesLeft > 30) continue
+        const key = `${kind}-${id}`
+        if (upcomingNotificationsSent.current.has(key)) continue
+        upcomingNotificationsSent.current.add(key)
+        await notifyUpcoming(kind, item as any, minutesLeft)
+      }
+    }
+
+    await checkUpcoming('reserva', reservasData)
+    await checkUpcoming('apronte', aprontesData)
+  }, [])
+
+  const cargarPanel = useCallback(async (options?: { isRefresh?: boolean; silent?: boolean }) => {
     if (!user) return
+    const isRefresh = Boolean(options?.isRefresh)
+    const silent = Boolean(options?.silent)
 
-    if (isRefresh) setRefreshing(true)
-    else setLoading(true)
+    if (!silent) {
+      if (isRefresh) setRefreshing(true)
+      else setLoading(true)
+    }
 
-    setError('')
+    if (!silent) {
+      setError('')
+    }
 
     try {
       const [reservasRes, aprontesRes] = await Promise.allSettled([
@@ -187,19 +246,28 @@ export default function App() {
 
       const errors: string[] = []
 
+      const reservasData = reservasRes.status === 'fulfilled' && Array.isArray(reservasRes.value)
+        ? reservasRes.value
+        : []
+      const aprontesData = aprontesRes.status === 'fulfilled' && Array.isArray(aprontesRes.value)
+        ? aprontesRes.value
+        : []
+
       if (reservasRes.status === 'fulfilled') {
-        setReservas(Array.isArray(reservasRes.value) ? reservasRes.value : [])
+        setReservas(reservasData)
       } else {
         errors.push('reservas')
         setReservas([])
       }
 
       if (aprontesRes.status === 'fulfilled') {
-        setAprontes(Array.isArray(aprontesRes.value) ? aprontesRes.value : [])
+        setAprontes(aprontesData)
       } else {
         errors.push('aprontes')
         setAprontes([])
       }
+
+      await evaluarNotificaciones(reservasData, aprontesData)
 
       setLastSync(
         new Date().toLocaleTimeString('es-UY', {
@@ -208,16 +276,20 @@ export default function App() {
         })
       )
 
-      if (errors.length) {
+      if (errors.length && !silent) {
         setError(`No se pudieron cargar: ${errors.join(', ')}.`)
       }
     } catch (err: any) {
-      setError(err?.message || 'No se pudieron cargar los datos del día.')
+      if (!silent) {
+        setError(err?.message || 'No se pudieron cargar los datos del día.')
+      }
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (!silent) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
-  }, [fechaHoy, user])
+  }, [evaluarNotificaciones, fechaHoy, user])
 
   useEffect(() => {
     if (user) {
@@ -226,10 +298,27 @@ export default function App() {
   }, [user, cargarPanel])
 
   useEffect(() => {
+    if (!user) return
+
+    const timer = setInterval(() => {
+      void cargarPanel({ silent: true })
+    }, 60000)
+
+    return () => clearInterval(timer)
+  }, [cargarPanel, user])
+
+  useEffect(() => {
     let mounted = true
 
     const restoreCredentials = async () => {
       try {
+        await initNotifications()
+
+        const storedSession = await loadStoredSessionUser()
+        if (mounted && storedSession) {
+          setUser(storedSession)
+        }
+
         const stored = await loadStoredCredentials()
         if (!mounted || !stored) return
 
@@ -331,6 +420,7 @@ export default function App() {
         throw new Error(result?.error || 'No fue posible iniciar sesión.')
       }
       setUser(result.user)
+      await saveStoredSessionUser(result.user)
 
       if (rememberCredentials) {
         await saveStoredCredentials(userValue, passValue)
@@ -373,6 +463,7 @@ export default function App() {
   const logout = () => {
     hasTriedAutoLogin.current = true
     setUser(null)
+    void clearStoredSessionUser()
     setReservas([])
     setAprontes([])
     setSelectedItem(null)
@@ -667,7 +758,7 @@ export default function App() {
           activeScreen === 'panel' ? (
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => cargarPanel(true)}
+              onRefresh={() => cargarPanel({ isRefresh: true })}
               tintColor={palette.primary}
               colors={[palette.primary]}
             />
