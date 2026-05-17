@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Modal,
   RefreshControl,
   SafeAreaView,
@@ -34,6 +35,7 @@ import {
   saveStoredSessionUser,
   saveStoredCredentials,
 } from './src/services/credentials'
+import { io, Socket } from 'socket.io-client'
 import { getMinutesUntil, initNotifications, notifyNewApronte, notifyUpcoming } from './src/services/notifications'
 
 type ThemeMode = 'light' | 'dark'
@@ -46,7 +48,7 @@ type DetailSelection =
   | null
 
 const RESERVA_ESTADOS = ['PENDIENTE', 'PENDIENTE REPUESTOS', 'EN REVISION', 'PRONTO', 'EN PROCESO', 'CANCELADO']
-const APRONTE_ESTADOS = ['APRONTE', 'ENTREGADA', 'ENTREGADA ESPERA DE GARANTIA']
+const APRONTE_ESTADOS = ['APRONTE', 'LISTA PARA ENTREGAR', 'ENTREGADA', 'ENTREGADA ESPERA DE GARANTIA']
 
 const PALETTES = {
   light: {
@@ -81,6 +83,24 @@ function getTodayIso() {
   const now = new Date()
   const offset = now.getTimezoneOffset() * 60000
   return new Date(now.getTime() - offset).toISOString().split('T')[0]
+}
+
+function getRealtimeOrigins(apiUrl: string) {
+  const primary = String(apiUrl || '').trim().replace(/\/+$/, '')
+  if (!primary) return []
+
+  const roots = new Set<string>()
+  roots.add(primary)
+
+  const withoutApi = primary.replace(/\/api$/, '')
+  const withoutApiServer = primary.replace(/\/api-server$/, '')
+  const withoutApiSocket = primary.replace(/\/api-socket-io$/, '')
+
+  if (withoutApi) roots.add(withoutApi)
+  if (withoutApiServer) roots.add(withoutApiServer)
+  if (withoutApiSocket) roots.add(withoutApiSocket)
+
+  return Array.from(roots)
 }
 
 function formatPrettyDate(dateIso: string) {
@@ -118,7 +138,7 @@ function getStatusColors(estado: string | null | undefined, isDark: boolean) {
   if (normalized.includes('CANCEL')) {
     return { backgroundColor: isDark ? '#4c1d1d' : '#fee2e2', color: isDark ? '#fecaca' : '#b91c1c' }
   }
-  if (normalized.includes('GARANTIA') || normalized.includes('PRONTO')) {
+  if (normalized.includes('GARANTIA') || normalized.includes('PRONTO') || normalized.includes('LISTA PARA ENTREGAR')) {
     return { backgroundColor: isDark ? '#3b2f14' : '#fef3c7', color: isDark ? '#fde68a' : '#92400e' }
   }
   if (normalized.includes('PROCESO') || normalized.includes('REVISION')) {
@@ -173,6 +193,7 @@ export default function App() {
   const hasTriedAutoLogin = useRef(false)
   const initializedApronteIds = useRef<Set<number>>(new Set())
   const upcomingNotificationsSent = useRef<Set<string>>(new Set())
+  const socketRef = useRef<Socket | null>(null)
 
   const isDark = themeMode === 'dark'
   const palette = PALETTES[themeMode]
@@ -302,9 +323,71 @@ export default function App() {
 
     const timer = setInterval(() => {
       void cargarPanel({ silent: true })
-    }, 60000)
+    }, 20000)
 
     return () => clearInterval(timer)
+  }, [cargarPanel, user])
+
+  useEffect(() => {
+    if (!user) return
+
+    let active = true
+    const origins = getRealtimeOrigins(ENV.apiUrl)
+
+    const connectAt = (index: number) => {
+      if (!active || index >= origins.length) return
+
+      const origin = origins[index]
+      const socket = io(origin, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
+        timeout: 8000,
+        reconnection: false,
+        forceNew: true,
+      })
+
+      socketRef.current = socket
+
+      const refreshSilently = () => {
+        void cargarPanel({ silent: true })
+      }
+
+      socket.on('rr:sync', refreshSilently)
+      socket.on('reservas:notify', refreshSilently)
+      socket.on('connect_error', () => {
+        socket.removeAllListeners()
+        socket.disconnect()
+        connectAt(index + 1)
+      })
+      socket.on('error', () => {
+        socket.removeAllListeners()
+        socket.disconnect()
+        connectAt(index + 1)
+      })
+    }
+
+    connectAt(0)
+
+    return () => {
+      active = false
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners()
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+    }
+  }, [cargarPanel, user])
+
+  useEffect(() => {
+    if (!user) return
+
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void cargarPanel({ silent: true })
+      }
+    })
+
+    return () => sub.remove()
   }, [cargarPanel, user])
 
   useEffect(() => {
