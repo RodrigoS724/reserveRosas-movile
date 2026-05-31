@@ -36,7 +36,14 @@ import {
   saveStoredCredentials,
 } from './src/services/credentials'
 import { io, Socket } from 'socket.io-client'
-import { getMinutesUntil, initNotifications, notifyNewApronte, notifyUpcoming } from './src/services/notifications'
+import {
+  getMinutesUntil,
+  initNotifications,
+  notifyNewApronte,
+  notifyNewReserva,
+  notifyStatusChanged,
+  notifyUpcoming,
+} from './src/services/notifications'
 
 type ThemeMode = 'light' | 'dark'
 type ActiveScreen = 'panel' | 'ajustes'
@@ -121,6 +128,10 @@ function displayStatus(estado?: string | null) {
   return String(estado || 'SIN ESTADO').replace(/_/g, ' ').trim()
 }
 
+function trackStatusValue(estado?: string | null) {
+  return String(estado || 'SIN ESTADO').trim().toUpperCase().replace(/_/g, ' ')
+}
+
 function buildReservaType(reserva: Reserva) {
   const tipo = String(reserva.tipo_turno || '').trim().toLowerCase()
   if (tipo === 'garantía' || tipo === 'garantia') {
@@ -192,6 +203,9 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState<DetailSelection>(null)
   const hasTriedAutoLogin = useRef(false)
   const initializedApronteIds = useRef<Set<number>>(new Set())
+  const initializedReservaIds = useRef<Set<number>>(new Set())
+  const lastReservaStatus = useRef<Map<number, string>>(new Map())
+  const lastApronteStatus = useRef<Map<number, string>>(new Map())
   const upcomingNotificationsSent = useRef<Set<string>>(new Set())
   const socketRef = useRef<Socket | null>(null)
 
@@ -199,25 +213,71 @@ export default function App() {
   const palette = PALETTES[themeMode]
 
   const evaluarNotificaciones = useCallback(async (reservasData: Reserva[], aprontesData: Apronte[]) => {
-    const idsActuales = new Set<number>()
+    const idsActualesAprontes = new Set<number>()
+    const idsActualesReservas = new Set<number>()
+    const estadoApronteActual = new Map<number, string>()
+    const estadoReservaActual = new Map<number, string>()
+    const aprontesPorId = new Map<number, Apronte>()
+    const reservasPorId = new Map<number, Reserva>()
 
     for (const apronte of aprontesData) {
       const id = Number(apronte?.id || 0)
       if (!id) continue
-      idsActuales.add(id)
+      idsActualesAprontes.add(id)
+      estadoApronteActual.set(id, trackStatusValue(apronte?.estado as string | null | undefined))
+      aprontesPorId.set(id, apronte)
     }
 
-    if (initializedApronteIds.current.size === 0) {
-      initializedApronteIds.current = idsActuales
+    for (const reserva of reservasData) {
+      const id = Number(reserva?.id || 0)
+      if (!id) continue
+      idsActualesReservas.add(id)
+      estadoReservaActual.set(id, trackStatusValue(reserva?.estado as string | null | undefined))
+      reservasPorId.set(id, reserva)
+    }
+
+    if (initializedApronteIds.current.size === 0 && initializedReservaIds.current.size === 0) {
+      initializedApronteIds.current = idsActualesAprontes
+      initializedReservaIds.current = idsActualesReservas
+      lastApronteStatus.current = estadoApronteActual
+      lastReservaStatus.current = estadoReservaActual
     } else {
-      for (const apronte of aprontesData) {
-        const id = Number(apronte?.id || 0)
-        if (!id) continue
+      for (const [id, apronte] of aprontesPorId.entries()) {
         if (!initializedApronteIds.current.has(id)) {
           await notifyNewApronte(apronte)
         }
       }
-      initializedApronteIds.current = idsActuales
+
+      for (const [id, reserva] of reservasPorId.entries()) {
+        if (!initializedReservaIds.current.has(id)) {
+          await notifyNewReserva(reserva)
+        }
+      }
+
+      for (const [id, estadoNuevo] of estadoApronteActual.entries()) {
+        const estadoAnterior = lastApronteStatus.current.get(id)
+        if (estadoAnterior && estadoAnterior !== estadoNuevo) {
+          const item = aprontesPorId.get(id)
+          if (item) {
+            await notifyStatusChanged('apronte', item, displayStatus(estadoAnterior), displayStatus(estadoNuevo))
+          }
+        }
+      }
+
+      for (const [id, estadoNuevo] of estadoReservaActual.entries()) {
+        const estadoAnterior = lastReservaStatus.current.get(id)
+        if (estadoAnterior && estadoAnterior !== estadoNuevo) {
+          const item = reservasPorId.get(id)
+          if (item) {
+            await notifyStatusChanged('reserva', item, displayStatus(estadoAnterior), displayStatus(estadoNuevo))
+          }
+        }
+      }
+
+      initializedApronteIds.current = idsActualesAprontes
+      initializedReservaIds.current = idsActualesReservas
+      lastApronteStatus.current = estadoApronteActual
+      lastReservaStatus.current = estadoReservaActual
     }
 
     const now = new Date()

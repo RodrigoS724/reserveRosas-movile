@@ -29,6 +29,15 @@ function buildDateTime(fecha?: string | null, hora?: string | null) {
   return value
 }
 
+function buildImmediateTrigger(): Notifications.TimeIntervalTriggerInput {
+  return {
+    type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+    seconds: 1,
+    repeats: false,
+    channelId: 'rr-alerts',
+  }
+}
+
 export async function initNotifications() {
   if (initialized) return true
 
@@ -67,7 +76,44 @@ export async function notifyNewApronte(item: AgendaItem) {
       data: { kind: 'apronte', id: item.id },
       sound: 'default',
     },
-    trigger: null,
+    trigger: buildImmediateTrigger(),
+  })
+}
+
+export async function notifyNewReserva(item: AgendaItem) {
+  const ok = await initNotifications()
+  if (!ok) return
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Nueva reserva',
+      body: `${String(item.nombre || 'Cliente')} (${String(item.hora || '--:--')})`,
+      data: { kind: 'reserva', id: item.id },
+      sound: 'default',
+    },
+    trigger: buildImmediateTrigger(),
+  })
+}
+
+export async function notifyStatusChanged(
+  kind: 'reserva' | 'apronte',
+  item: AgendaItem,
+  estadoAnterior: string,
+  estadoNuevo: string
+) {
+  const ok = await initNotifications()
+  if (!ok) return
+
+  const prettyKind = kind === 'reserva' ? 'reserva' : 'apronte'
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `Cambio de estado (${prettyKind})`,
+      body: `${String(item.nombre || 'Cliente')}: ${estadoAnterior || 'SIN ESTADO'} -> ${estadoNuevo || 'SIN ESTADO'}`,
+      data: { kind, id: item.id, estadoAnterior, estadoNuevo },
+      sound: 'default',
+    },
+    trigger: buildImmediateTrigger(),
   })
 }
 
@@ -88,7 +134,7 @@ export async function notifyUpcoming(kind: 'reserva' | 'apronte', item: AgendaIt
       data: { kind, id: item.id, minutesLeft },
       sound: 'default',
     },
-    trigger: null,
+    trigger: buildImmediateTrigger(),
   })
 }
 

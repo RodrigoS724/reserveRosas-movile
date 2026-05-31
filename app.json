@@ -2,7 +2,7 @@
   "expo": {
     "name": "reserveRosas Mobile",
     "slug": "reserveRosas-movile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -27,11 +27,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "uy.rosas.reserverosasmobile",
-      "buildNumber": "15"
+      "buildNumber": "17"
     },
     "android": {
       "package": "uy.rosas.reserverosasmobile",
-      "versionCode": 15,
+      "versionCode": 17,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -45,15 +45,16 @@
     "extra": {
       "apiUrl": "https://rosas.uy/api-server",
       "apiToken": "gh2t2oNre50TR4ZucrkssNPFb8LnDhD5JT9gM89ERy4",
-      "gitCommit": "3ec3778",
-      "gitVersionCode": 15,
+      "gitCommit": "dafb984",
+      "gitVersionCode": 17,
       "eas": {
         "projectId": "c444a89e-1abd-4b96-939e-f2a3de128162"
       }
     },
     "owner": "rodrigo724",
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-notifications"
     ]
   }
 }
