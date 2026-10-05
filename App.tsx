@@ -19,13 +19,17 @@ import {
 import { ENV } from './src/config/env'
 import {
   Apronte,
+  asignarMecanicoApronte,
+  asignarMecanicoReserva,
   cambiarEstadoApronte,
   cambiarEstadoReserva,
   login,
   obtenerAprontesDia,
   obtenerReservasDia,
+  obtenerUsuarios,
   Reserva,
   SessionUser,
+  Usuario,
 } from './src/services/api'
 import {
   clearStoredSessionUser,
@@ -90,6 +94,15 @@ function getTodayIso() {
   const now = new Date()
   const offset = now.getTimezoneOffset() * 60000
   return new Date(now.getTime() - offset).toISOString().split('T')[0]
+}
+
+function shiftIsoDate(dateIso: string, days: number) {
+  const date = new Date(`${dateIso}T12:00:00`)
+  date.setDate(date.getDate() + days)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function getRealtimeOrigins(apiUrl: string) {
@@ -189,6 +202,8 @@ export default function App() {
   const [rememberCredentials, setRememberCredentials] = useState(false)
   const [restoringCredentials, setRestoringCredentials] = useState(true)
   const [user, setUser] = useState<SessionUser | null>(null)
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(fechaHoy)
+  const [mecanicos, setMecanicos] = useState<Usuario[]>([])
   const [reservas, setReservas] = useState<Reserva[]>([])
   const [aprontes, setAprontes] = useState<Apronte[]>([])
   const [loading, setLoading] = useState(false)
@@ -211,6 +226,19 @@ export default function App() {
 
   const isDark = themeMode === 'dark'
   const palette = PALETTES[themeMode]
+  const esMecanico = String(user?.role || '').toLowerCase() === 'mecanico'
+  const puedeAsignarMecanico = ['superadmin', 'administrador', 'ventas', 'caja'].includes(String(user?.role || '').toLowerCase())
+  const reservasVisibles = esMecanico
+    ? reservas.filter((item) => Number(item.mecanico_id || 0) === Number(user?.id || 0))
+    : reservas
+  const aprontesVisibles = esMecanico
+    ? aprontes.filter((item) => Number(item.mecanico_id || 0) === Number(user?.id || 0))
+    : aprontes
+
+  const nombreMecanico = (mecanicoId?: number | null) => {
+    const mecanico = mecanicos.find((item) => Number(item.id) === Number(mecanicoId || 0))
+    return mecanico?.nombre || mecanico?.username || 'Sin asignar'
+  }
 
   const evaluarNotificaciones = useCallback(async (reservasData: Reserva[], aprontesData: Apronte[]) => {
     const idsActualesAprontes = new Set<number>()
@@ -321,8 +349,8 @@ export default function App() {
 
     try {
       const [reservasRes, aprontesRes] = await Promise.allSettled([
-        obtenerReservasDia(fechaHoy),
-        obtenerAprontesDia(fechaHoy),
+        obtenerReservasDia(fechaSeleccionada),
+        obtenerAprontesDia(fechaSeleccionada),
       ])
 
       const errors: string[] = []
@@ -370,13 +398,35 @@ export default function App() {
         setRefreshing(false)
       }
     }
-  }, [evaluarNotificaciones, fechaHoy, user])
+  }, [evaluarNotificaciones, fechaSeleccionada, user])
 
   useEffect(() => {
     if (user) {
       cargarPanel()
     }
   }, [user, cargarPanel])
+
+  useEffect(() => {
+    if (!user || String(user.role || '').toLowerCase() === 'mecanico') {
+      setMecanicos([])
+      return
+    }
+
+    let active = true
+    void obtenerUsuarios()
+      .then((data) => {
+        if (active) {
+          setMecanicos((data || []).filter((item) => item.role === 'mecanico' && Number(item.activo ?? 1) === 1))
+        }
+      })
+      .catch(() => {
+        if (active) setMecanicos([])
+      })
+
+    return () => {
+      active = false
+    }
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -621,10 +671,10 @@ export default function App() {
 
     try {
       if (kind === 'reserva') {
-        await cambiarEstadoReserva(item as Reserva, estado)
+        await cambiarEstadoReserva(item as Reserva, estado, user)
         setReservas((current) => current.map((r) => (r.id === item.id ? { ...r, estado } : r)))
       } else {
-        await cambiarEstadoApronte(item as Apronte, estado)
+        await cambiarEstadoApronte(item as Apronte, estado, user)
         setAprontes((current) => current.map((a) => (a.id === item.id ? { ...a, estado } : a)))
       }
 
@@ -637,6 +687,37 @@ export default function App() {
       const message = err?.message || 'No se pudo actualizar el estado.'
       setError(message)
       Alert.alert('Actualización fallida', message)
+    } finally {
+      setUpdatingKey('')
+    }
+  }
+
+  const handleAsignarMecanico = async (kind: 'reserva' | 'apronte', item: Reserva | Apronte, mecanicoId: number | null) => {
+    const key = `asignacion-${kind}-${item.id}`
+    setUpdatingKey(key)
+    setError('')
+
+    try {
+      if (kind === 'reserva') {
+        await asignarMecanicoReserva(item as Reserva, mecanicoId, user)
+        setReservas((current) => current.map((currentItem) => (
+          currentItem.id === item.id ? { ...currentItem, mecanico_id: mecanicoId } : currentItem
+        )))
+      } else {
+        await asignarMecanicoApronte(item as Apronte, mecanicoId, user)
+        setAprontes((current) => current.map((currentItem) => (
+          currentItem.id === item.id ? { ...currentItem, mecanico_id: mecanicoId } : currentItem
+        )))
+      }
+
+      setSelectedItem((current) => {
+        if (!current || current.kind !== kind || current.item.id !== item.id) return current
+        return { ...current, item: { ...current.item, mecanico_id: mecanicoId } as any }
+      })
+    } catch (err: any) {
+      const message = err?.message || 'No se pudo guardar la asignación.'
+      setError(message)
+      Alert.alert('Asignación fallida', message)
     } finally {
       setUpdatingKey('')
     }
@@ -712,14 +793,35 @@ export default function App() {
   const renderPanel = () => (
     <>
       <View style={[styles.heroCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-        <Text style={[styles.kicker, { color: palette.primary }]}>Agenda de hoy</Text>
-        <Text style={[styles.heroTitle, { color: palette.text }]}>{formatPrettyDate(fechaHoy)}</Text>
+        <Text style={[styles.kicker, { color: palette.primary }]}>{fechaSeleccionada === fechaHoy ? 'Agenda de hoy' : 'Agenda seleccionada'}</Text>
+        <Text style={[styles.heroTitle, { color: palette.text }]}>{formatPrettyDate(fechaSeleccionada)}</Text>
         <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Última sincronización: {lastSync || 'pendiente'}</Text>
         <Text style={[styles.heroSubtitle, { color: palette.muted }]}>Estado de versión: {updateStatus}</Text>
 
+        <View style={styles.dateNavigation}>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}
+            onPress={() => setFechaSeleccionada((current) => shiftIsoDate(current, -1))}
+          >
+            <Text style={[styles.dateButtonText, { color: palette.text }]}>Anterior</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: fechaSeleccionada === fechaHoy ? palette.primarySoft : palette.surfaceAlt, borderColor: palette.border }]}
+            onPress={() => setFechaSeleccionada(fechaHoy)}
+          >
+            <Text style={[styles.dateButtonText, { color: palette.text }]}>Hoy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}
+            onPress={() => setFechaSeleccionada((current) => shiftIsoDate(current, 1))}
+          >
+            <Text style={[styles.dateButtonText, { color: palette.text }]}>Siguiente</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.statsRow}>
-          <StatCard label="Reservas" value={String(reservas.length)} palette={palette} />
-          <StatCard label="Aprontes" value={String(aprontes.length)} palette={palette} />
+          <StatCard label="Reservas" value={String(reservasVisibles.length)} palette={palette} />
+          <StatCard label="Aprontes" value={String(aprontesVisibles.length)} palette={palette} />
         </View>
       </View>
 
@@ -742,13 +844,13 @@ export default function App() {
               <Text style={[styles.sectionHint, { color: palette.muted }]}>Toca una reserva para ver el detalle</Text>
             </View>
 
-            {reservas.length === 0 ? (
+            {reservasVisibles.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-                <Text style={[styles.emptyTitle, { color: palette.text }]}>Sin reservas hoy</Text>
-                <Text style={[styles.emptyText, { color: palette.muted }]}>No hay reservas registradas para la fecha actual.</Text>
+                <Text style={[styles.emptyTitle, { color: palette.text }]}>Sin reservas</Text>
+                <Text style={[styles.emptyText, { color: palette.muted }]}>No hay reservas para esta fecha.</Text>
               </View>
             ) : (
-              reservas.map((reserva) => {
+              reservasVisibles.map((reserva) => {
                 const badge = getStatusColors(reserva.estado, isDark)
                 return (
                   <TouchableOpacity
@@ -769,6 +871,7 @@ export default function App() {
                     <Text style={[styles.itemTitle, { color: palette.text }]}>{displayText(reserva.nombre)}</Text>
                     <Text style={[styles.itemMeta, { color: palette.muted }]}>{buildReservaType(reserva)}</Text>
                     <Text style={[styles.itemMeta, { color: palette.muted }]}>Vehículo: {displayText(`${reserva.marca || ''} ${reserva.modelo || ''}`)}</Text>
+                    {!esMecanico ? <Text style={[styles.itemMeta, { color: palette.muted }]}>Mecánico: {nombreMecanico(reserva.mecanico_id)}</Text> : null}
                     <Text style={[styles.itemFoot, { color: palette.accent }]}>Ver detalle</Text>
                   </TouchableOpacity>
                 )
@@ -782,13 +885,13 @@ export default function App() {
               <Text style={[styles.sectionHint, { color: palette.muted }]}>Toca un apronte para ver el detalle</Text>
             </View>
 
-            {aprontes.length === 0 ? (
+            {aprontesVisibles.length === 0 ? (
               <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}> 
-                <Text style={[styles.emptyTitle, { color: palette.text }]}>Sin aprontes hoy</Text>
+                <Text style={[styles.emptyTitle, { color: palette.text }]}>Sin aprontes</Text>
                 <Text style={[styles.emptyText, { color: palette.muted }]}>No hay aprontes cargados para esta fecha.</Text>
               </View>
             ) : (
-              aprontes.map((apronte) => {
+              aprontesVisibles.map((apronte) => {
                 const badge = getStatusColors(apronte.estado, isDark)
                 return (
                   <TouchableOpacity
@@ -809,6 +912,7 @@ export default function App() {
                     <Text style={[styles.itemTitle, { color: palette.text }]}>{displayText(apronte.nombre)}</Text>
                     <Text style={[styles.itemMeta, { color: palette.muted }]}>Factura: {displayText(apronte.factura)}</Text>
                     <Text style={[styles.itemMeta, { color: palette.muted }]}>Vehículo: {displayText(`${apronte.marca || ''} ${apronte.modelo || ''}`)}</Text>
+                    {!esMecanico ? <Text style={[styles.itemMeta, { color: palette.muted }]}>Mecánico: {nombreMecanico(apronte.mecanico_id)}</Text> : null}
                     <Text style={[styles.itemFoot, { color: palette.accent }]}>Ver detalle</Text>
                   </TouchableOpacity>
                 )
@@ -978,6 +1082,7 @@ export default function App() {
                         <DetailField label="Matrícula" value={selectedItem.item.matricula} palette={palette} />
                         <DetailField label="Tipo" value={buildReservaType(selectedItem.item)} palette={palette} />
                         <DetailField label="Detalles" value={selectedItem.item.detalles} palette={palette} />
+                        <DetailField label="Mecánico" value={nombreMecanico(selectedItem.item.mecanico_id)} palette={palette} />
                         <DetailField label="Estado actual" value={displayStatus(selectedItem.item.estado)} palette={palette} />
                       </>
                     ) : (
@@ -991,10 +1096,39 @@ export default function App() {
                         <DetailField label="Factura" value={selectedItem.item.factura} palette={palette} />
                         <DetailField label="Observaciones" value={selectedItem.item.observaciones} palette={palette} />
                         <DetailField label="Repuestos garantía" value={selectedItem.item.repuestos_garantia} palette={palette} />
+                        <DetailField label="Mecánico" value={nombreMecanico(selectedItem.item.mecanico_id)} palette={palette} />
                         <DetailField label="Estado actual" value={displayStatus(selectedItem.item.estado)} palette={palette} />
                       </>
                     )}
                   </View>
+
+                  {puedeAsignarMecanico ? (
+                    <View style={styles.statusSection}>
+                      <Text style={[styles.sectionTitle, { color: palette.text }]}>Asignar mecánico</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.assignmentButtonsWrap}>
+                        <TouchableOpacity
+                          style={[styles.statusAction, { borderColor: palette.border, backgroundColor: selectedItem.item.mecanico_id ? palette.surfaceAlt : palette.primary }]}
+                          disabled={updatingKey === `asignacion-${selectedItem.kind}-${selectedItem.item.id}`}
+                          onPress={() => handleAsignarMecanico(selectedItem.kind, selectedItem.item, null)}
+                        >
+                          <Text style={[styles.statusActionText, { color: selectedItem.item.mecanico_id ? palette.text : '#ffffff' }]}>Sin asignar</Text>
+                        </TouchableOpacity>
+                        {mecanicos.map((mecanico) => {
+                          const active = Number(selectedItem.item.mecanico_id || 0) === Number(mecanico.id)
+                          return (
+                            <TouchableOpacity
+                              key={mecanico.id}
+                              style={[styles.statusAction, { borderColor: palette.border, backgroundColor: active ? palette.primary : palette.surfaceAlt }]}
+                              disabled={updatingKey === `asignacion-${selectedItem.kind}-${selectedItem.item.id}`}
+                              onPress={() => handleAsignarMecanico(selectedItem.kind, selectedItem.item, mecanico.id)}
+                            >
+                              <Text style={[styles.statusActionText, { color: active ? '#ffffff' : palette.text }]}>{mecanico.nombre}</Text>
+                            </TouchableOpacity>
+                          )
+                        })}
+                      </ScrollView>
+                    </View>
+                  ) : null}
 
                   <View style={styles.statusSection}>
                     <Text style={[styles.sectionTitle, { color: palette.text }]}>Cambiar estado</Text>
@@ -1196,6 +1330,22 @@ const styles = StyleSheet.create({
   },
   heroSubtitle: {
     fontSize: 13,
+  },
+  dateNavigation: {
+    flexDirection: 'row',
+    marginTop: 14,
+  },
+  dateButton: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    marginRight: 8,
+  },
+  dateButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   statsRow: {
     flexDirection: 'row',
@@ -1409,6 +1559,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginTop: 8,
+  },
+  assignmentButtonsWrap: {
+    paddingTop: 8,
+    paddingRight: 8,
   },
   statusAction: {
     borderWidth: 1,

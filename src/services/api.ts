@@ -8,6 +8,15 @@ export type SessionUser = {
   permissions?: string[]
 }
 
+export type Usuario = {
+  id: number
+  nombre: string
+  username: string
+  role: string
+  activo?: number
+  es_mecanico_default?: number
+}
+
 export type Reserva = {
   id: number
   nombre: string
@@ -23,6 +32,7 @@ export type Reserva = {
   tipo_turno?: string | null
   particular_tipo?: string | null
   garantia_tipo?: string | null
+  mecanico_id?: number | null
   [key: string]: unknown
 }
 
@@ -39,6 +49,7 @@ export type Apronte = {
   estado?: string | null
   observaciones?: string | null
   repuestos_garantia?: string | null
+  mecanico_id?: number | null
   [key: string]: unknown
 }
 
@@ -153,12 +164,38 @@ export function obtenerAprontesDia(fecha: string) {
   return request<Apronte[]>(`/api/aprontes?fecha=${encodeURIComponent(fecha)}`)
 }
 
-export function cambiarEstadoReserva(reserva: Reserva, estado: string) {
+export function obtenerUsuarios() {
+  return request<Usuario[]>('/api/usuarios')
+}
+
+export function asignarMecanicoReserva(reserva: Reserva, mecanicoId: number | null, actor?: SessionUser | null) {
+  return request('/api/reservas/' + reserva.id, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...reserva,
+      mecanico_id: mecanicoId,
+      actor,
+    }),
+  })
+}
+
+export function asignarMecanicoApronte(apronte: Apronte, mecanicoId: number | null, actor?: SessionUser | null) {
+  return request('/api/aprontes/' + apronte.id, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ...apronte,
+      mecanico_id: mecanicoId,
+      actor,
+    }),
+  })
+}
+
+export function cambiarEstadoReserva(reserva: Reserva, estado: string, actor?: SessionUser | null) {
   const id = reserva.id
 
   return request('/api/reservas/' + id + '/estado', {
     method: 'PATCH',
-    body: JSON.stringify({ estado }),
+    body: JSON.stringify({ estado, actor }),
   }).catch((error: any) => {
     const message = String(error?.message || '').toLowerCase()
     const shouldFallback =
@@ -174,17 +211,19 @@ export function cambiarEstadoReserva(reserva: Reserva, estado: string) {
       body: JSON.stringify({
         ...reserva,
         estado,
+        actor,
       }),
     })
   })
 }
 
-export function cambiarEstadoApronte(apronte: Apronte, estado: string) {
+export function cambiarEstadoApronte(apronte: Apronte, estado: string, actor?: SessionUser | null) {
   return request('/api/aprontes/' + apronte.id, {
     method: 'PUT',
     body: JSON.stringify({
       ...apronte,
       estado,
+      actor,
     }),
   })
 }
